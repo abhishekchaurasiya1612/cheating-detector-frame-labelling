@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cheating Detection Labeling Tool</title>
+  <style>
+    body { text-align: center; font-family: Arial; background-color: #f5f5f5; }
+    img { max-width: 70%; border: 2px solid #ccc; border-radius: 10px; margin: 20px; }
+    button { padding: 10px 20px; margin: 10px; font-size: 18px; border-radius: 8px; }
+    .cheating { background-color: #e74c3c; color: white; }
+    .not { background-color: #2ecc71; color: white; }
+    .upload-form { margin: 20px; padding: 20px; background-color: white; border-radius: 10px; }
+    .upload-form input[type="file"] { margin: 10px; }
+    .upload-form input[type="submit"] { padding: 10px 20px; background-color: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    #processing { display: none; color: #3498db; font-weight: bold; }
+    .results { 
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      margin: 20px auto;
+      max-width: 600px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .results h2 { color: #2c3e50; }
+    .results p { 
+      font-size: 18px;
+      margin: 15px 0;
+      padding: 10px;
+      border-radius: 5px;
+      background-color: #f8f9fa;
+    }
+    .conclusion {
+      font-weight: bold;
+      font-size: 24px !important;
+      padding: 15px !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>Frame Labeling Tool</h1>
+  
+  <div class="upload-form">
+    <form id="uploadForm" enctype="multipart/form-data">
+      <input type="file" name="video" accept="video/*" required>
+      <input type="submit" value="Upload and Process Video">
+    </form>
+    <p id="processing">Processing video... Please wait...</p>
+  </div>
+
+  <div id="labeling-section" style="display: none;">
+    <h3 id="predicted"></h3>
+    <img id="frame" src="" alt="Frame">
+
+    <div>
+      <button class="not" onclick="label('Not Cheating')">Not Cheating</button>
+      <button class="cheating" onclick="label('Cheating')">Cheating</button>
+    </div>
+  </div>
+
+  <script>
+    let frames = [];
+    let labels = [];
+    let idx = 0;
+
+    document.getElementById('uploadForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      
+      document.getElementById('processing').style.display = 'block';
+      this.style.display = 'none';
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          frames = data.frames;
+          labels = data.labels;
+          document.getElementById('labeling-section').style.display = 'block';
+          document.getElementById('processing').style.display = 'none';
+          idx = 0;
+          loadFrame();
+        } else {
+          alert('Error processing video: ' + data.message);
+          document.getElementById('uploadForm').style.display = 'block';
+          document.getElementById('processing').style.display = 'none';
+        }
+      } catch (error) {
+        alert('Error uploading video: ' + error);
+        document.getElementById('uploadForm').style.display = 'block';
+        document.getElementById('processing').style.display = 'none';
+      }
+    };
+
+    function loadFrame() {
+      if (idx < frames.length) {
+        document.getElementById("frame").src = "/static/frames/" + frames[idx];
+        document.getElementById("predicted").innerText =
+          "Predicted: " + labels[idx];
+      } else {
+        alert("✅ All frames labeled!");
+        document.getElementById('uploadForm').style.display = 'block';
+        document.getElementById('labeling-section').style.display = 'none';
+      }
+    }
+
+    async function label(labelValue) {
+      const frameName = frames[idx];
+      const [video_name, frame_number, timestamp] = frameName.replace('.jpg', '').split('_');
+
+      await fetch('/api/save_label', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          video_name: video_name,
+          frame_name: frameName,
+          frame_number: parseInt(frame_number.replace('frame','')),
+          timestamp_sec: parseInt(timestamp.replace('t','')),
+          label: labelValue
+        })
+      });
+
+      idx++;
+      if (idx >= frames.length) {
+        // Get analysis results when all frames are labeled
+        const response = await fetch('/api/analysis/' + video_name);
+        const results = await response.json();
+        showResults(results);
+      } else {
+        loadFrame();
+      }
+    }
+
+    function showResults(results) {
+      const resultsHtml = `
+        <div class="results">
+          <h2>Analysis Results</h2>
+          <p>Total Frames Analyzed: ${results.total_frames}</p>
+          <p>Cheating Detected in: ${results.cheating_frames} frames</p>
+          <p>Cheating Percentage: ${results.cheating_percentage}%</p>
+          <p class="conclusion ${results.overall_conclusion === 'Cheating Detected' ? 'cheating' : 'not'}">
+            Overall Conclusion: ${results.overall_conclusion}
+          </p>
+        </div>
+      `;
+      document.getElementById('labeling-section').innerHTML = resultsHtml;
+    }
+  </script>
+</body>
+</html>
