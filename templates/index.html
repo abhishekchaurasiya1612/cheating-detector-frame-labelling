@@ -74,9 +74,15 @@
           method: 'POST',
           body: formData
         });
-        const data = await response.json();
         
-        if (data.status === 'success') {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Server response:', data); // Debug log
+        
+        if (data.status === 'success' && data.frames && data.frames.length > 0) {
           frames = data.frames;
           labels = data.labels;
           document.getElementById('labeling-section').style.display = 'block';
@@ -84,12 +90,15 @@
           idx = 0;
           loadFrame();
         } else {
-          alert('Error processing video: ' + data.message);
+          const errorMessage = data.message || 'Unknown error occurred';
+          console.error('Server error:', errorMessage); // Debug log
+          alert('Error processing video: ' + errorMessage);
           document.getElementById('uploadForm').style.display = 'block';
           document.getElementById('processing').style.display = 'none';
         }
       } catch (error) {
-        alert('Error uploading video: ' + error);
+        console.error('Upload error:', error); // Debug log
+        alert('Error uploading video: ' + error.message);
         document.getElementById('uploadForm').style.display = 'block';
         document.getElementById('processing').style.display = 'none';
       }

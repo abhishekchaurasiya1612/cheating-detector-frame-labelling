@@ -44,29 +44,46 @@ def upload_video():
         return jsonify({'status': 'error', 'message': 'No video file selected'})
     
     if not allowed_file(file.filename):
-        return jsonify({'status': 'error', 'message': 'Invalid file type'})
+        return jsonify({'status': 'error', 'message': f'Invalid file type. Allowed types are: mp4, avi, mov'})
     
     try:
+        # Clear existing frames
+        for f in os.listdir('static/frames'):
+            if f.endswith('.jpg'):
+                os.remove(os.path.join('static/frames', f))
+        
         # Generate unique filename
         unique_filename = f"{str(uuid.uuid4())}_{secure_filename(file.filename)}"
         video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(video_path)
         
         # Extract frames
-        extract_frames(video_path, 'static/frames')
+        try:
+            extract_frames(video_path, 'static/frames')
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'Error extracting frames: {str(e)}'})
         
         # Auto label frames
-        auto_label_frames()
+        try:
+            auto_label_frames('static/frames')
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'Error auto-labeling frames: {str(e)}'})
         
         # Load predicted labels
-        if os.path.exists("predicted_labels.json"):
-            with open("predicted_labels.json") as f:
-                prelabels = {item["frame_name"]: item["predicted_label"] for item in json.load(f)}
-        else:
-            prelabels = {}
+        try:
+            if os.path.exists("predicted_labels.json"):
+                with open("predicted_labels.json") as f:
+                    prelabels = {item["frame_name"]: item["predicted_label"] for item in json.load(f)}
+            else:
+                prelabels = {}
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'Error loading predictions: {str(e)}'})
         
         # Get frames and their labels
         frames = sorted(os.listdir('static/frames'))
+        if not frames:
+            return jsonify({'status': 'error', 'message': 'No frames were extracted from the video'})
+            
         labels = [prelabels.get(f, "Not Labeled") for f in frames]
         
         return jsonify({
@@ -76,7 +93,7 @@ def upload_video():
         })
         
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+        return jsonify({'status': 'error', 'message': f'Upload error: {str(e)}'})
 
 @app.route('/api/save_label', methods=['POST'])
 def save_label():
